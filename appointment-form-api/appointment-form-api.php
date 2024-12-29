@@ -17,15 +17,14 @@ function create_appointment_table() {
     $table_name = $wpdb->prefix . 'appointments'; 
     $charset_collate = $wpdb->get_charset_collate();
 
-    // Verificar si la tabla ya existe
     if ($wpdb->get_var("SHOW TABLES LIKE '$table_name'") == $table_name) {
-        // La tabla ya existe, realizar las comprobaciones y actualizaciones necesarias
-        
         // Verificar las columnas actuales de la tabla
         $columns = $wpdb->get_results("SHOW COLUMNS FROM $table_name");
 
         // Array de columnas esperadas
         $expected_columns = [
+            'patient_type',
+            'reason_for_visit',
             'first_name',
             'last_name',
             'dob',
@@ -34,7 +33,7 @@ function create_appointment_table() {
             'contact_preference',
             'doctor_note',
             'appointment_day_and_time',
-            'time_since_last_visit',  // Columna nueva que queremos verificar
+            'time_since_last_visit',
             'created_at'
         ];
 
@@ -52,14 +51,17 @@ function create_appointment_table() {
 
             // Si la columna no existe, agregarla
             if (!$column_exists) {
-                if ($column === 'time_since_last_visit') {
+                if ($column === 'patient_type') {
+                    $wpdb->query("ALTER TABLE $table_name ADD COLUMN $column varchar(255) DEFAULT ''");
+                }
+                if ($column === 'reason_for_visit') {
                     $wpdb->query("ALTER TABLE $table_name ADD COLUMN $column varchar(255) DEFAULT ''");
                 }
                 // Puedes agregar más columnas aquí si es necesario
             }
         }
     } else {
-        // Si la tabla no existe, crearla desde cero
+        // Crear la tabla con las nuevas columnas
         $sql = "CREATE TABLE $table_name (
             id mediumint(9) NOT NULL AUTO_INCREMENT,
             first_name varchar(255) NOT NULL,
@@ -69,11 +71,13 @@ function create_appointment_table() {
             email varchar(255) NOT NULL,
             contact_preference varchar(50) NOT NULL,
             doctor_note text NOT NULL,
-            appointment_day_and_time varchar(255) NOT NULL,  -- Nueva columna para el día y turno
-            time_since_last_visit varchar(255) DEFAULT '',  -- Cambiado a VARCHAR para almacenar un texto
+            appointment_day_and_time varchar(255) NOT NULL,
+            time_since_last_visit varchar(255) DEFAULT '',
+            patient_type varchar(255) DEFAULT '',
+            reason_for_visit varchar(255) DEFAULT '',  -- Columna para razón de la visita
             created_at datetime DEFAULT CURRENT_TIMESTAMP NOT NULL,
             PRIMARY KEY (id),
-            UNIQUE KEY email (email)  -- Asegura que el email sea único en la tabla
+            UNIQUE KEY email (email)
         ) $charset_collate;";
 
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
@@ -83,7 +87,6 @@ function create_appointment_table() {
 
 register_activation_hook(__FILE__, 'create_appointment_table');
 
-// Función para guardar los detalles de la cita
 // Función para guardar los detalles de la cita y enviar correo
 function save_appointment_details(WP_REST_Request $request) {
     $data = $request->get_json_params();
@@ -127,7 +130,9 @@ function save_appointment_details(WP_REST_Request $request) {
             'contact_preference'=> sanitize_text_field($data['contactPreference'] ?? ''),
             'doctor_note'       => sanitize_textarea_field($data['doctorNote'] ?? ''),
             'appointment_day_and_time' => sanitize_text_field($data['appointmentDateTime']),
-            'time_since_last_visit' => $time_since_last_visit,  // Almacenar como VARCHAR
+            'time_since_last_visit' => $time_since_last_visit,
+            'patient_type'      => sanitize_text_field($data['patientType']),
+            'reason_for_visit'  => sanitize_text_field($data['reasonForVisit']),
         )
     );
 
@@ -161,6 +166,8 @@ function msf_send_email_handler($data) {
         <p><strong>Doctor's Note:</strong> {$data['doctorNote']}</p>
         <p><strong>Appointment Date and Time:</strong> {$data['appointmentDateTime']}</p>
         <p><strong>Time Since Last Visit:</strong> {$data['timeSinceLastVisit']}</p>
+        <p><strong>Patient Type:</strong> {$data['patientType']}</p>
+        <p><strong>Reason for Visit:</strong> {$data['reasonForVisit']}</p>
     ";
 
     $headers = [
@@ -170,7 +177,6 @@ function msf_send_email_handler($data) {
 
     return wp_mail($to, $subject, $message, $headers);
 }
-
 
 // Registrar la ruta de la API REST
 function register_appointment_endpoint() {
